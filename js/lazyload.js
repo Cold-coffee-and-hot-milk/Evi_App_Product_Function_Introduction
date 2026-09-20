@@ -1,120 +1,132 @@
-document.addEventListener('DOMContentLoaded', function() {
-    setupImageLazyLoad();
-    
-    setTimeout(() => {
-        preloadVisibleImages();
-    }, 300);
-    
-    window.addEventListener('scroll', debounce(function() {
-        preloadVisibleImages();
-    }, 100));
-});
+// 图片懒加载 - 优化版
+(function() {
+    'use strict';
 
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
+    let imageObserver = null;
+    const loadedImages = new WeakSet();
+    const observingImages = new WeakSet();
 
-function setupImageLazyLoad() {
-    const lazyImages = document.querySelectorAll('img[data-src]');
-    
-    if ('IntersectionObserver' in window) {
-        const imageObserver = new IntersectionObserver((entries, observer) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const image = entry.target;
-                    const src = image.getAttribute('data-src');
-                    if (src) {
-                        loadImage(image, src);
+    function setupImageObserver() {
+        if (imageObserver) return imageObserver;
+
+        if ('IntersectionObserver' in window) {
+            imageObserver = new IntersectionObserver(function(entries, observer) {
+                entries.forEach(function(entry) {
+                    if (entry.isIntersecting) {
+                        loadImage(entry.target);
+                        observer.unobserve(entry.target);
+                        observingImages.delete(entry.target);
                     }
-                    observer.unobserve(image);
-                }
+                });
+            }, {
+                rootMargin: '200px 0px', // 提前200px开始加载，让用户滚动时图片已就绪
+                threshold: 0.01
             });
-        }, {
-            rootMargin: '100px 0px',
-            threshold: 0.01
-        });
-        
-        lazyImages.forEach(image => {
-            imageObserver.observe(image);
-        });
-    } else {
-        lazyImages.forEach(image => {
-            const src = image.getAttribute('data-src');
-            if (src) {
-                loadImage(image, src);
+        }
+        return imageObserver;
+    }
+
+    function observeNewImages(root) {
+        var scope = root || document;
+        var images = scope.querySelectorAll('img[data-src]:not(.lazy-loaded)');
+
+        if (!imageObserver) setupImageObserver();
+
+        images.forEach(function(img) {
+            if (observingImages.has(img) || loadedImages.has(img)) return;
+
+            if (imageObserver) {
+                imageObserver.observe(img);
+                observingImages.add(img);
+            } else {
+                // 不支持 IntersectionObserver，直接加载所有
+                loadImage(img);
             }
         });
     }
-}
 
-function loadImage(img, src) {
-    const imgPlaceholder = document.createElement('div');
-    imgPlaceholder.className = 'img-placeholder';
-    imgPlaceholder.style.width = img.offsetWidth + 'px';
-    imgPlaceholder.style.height = img.offsetHeight + 'px';
-    img.parentNode.insertBefore(imgPlaceholder, img);
-    
-    const tempImg = new Image();
-    tempImg.onload = function() {
-        img.src = src;
-        img.removeAttribute('data-src');
-        img.classList.remove('lazy');
-        img.classList.add('loaded');
-        
-        setTimeout(() => {
-            if (imgPlaceholder.parentNode) {
-                imgPlaceholder.parentNode.removeChild(imgPlaceholder);
+    function loadImage(img) {
+        if (loadedImages.has(img)) return;
+
+        var dataSrc = img.getAttribute('data-src');
+        if (!dataSrc) return;
+
+        // 标记为正在加载，避免重复触发
+        img.classList.add('lazy-loading');
+
+        var tempImg = new Image();
+
+        tempImg.onload = function() {
+            img.src = dataSrc;
+            img.removeAttribute('data-src');
+            img.classList.remove('lazy', 'lazy-loading');
+            img.classList.add('lazy-loaded');
+            loadedImages.add(img);
+        };
+
+        tempImg.onerror = function() {
+            img.classList.remove('lazy-loading');
+            img.classList.add('lazy-error');
+            // 尝试加载原始 PNG 作为 fallback
+            var pngSrc = dataSrc.replace(/\.webp$/i, '.png');
+            if (pngSrc !== dataSrc) {
+                img.setAttribute('data-src', pngSrc);
+                // 不自动重试，等待用户滚动到
             }
-        }, 300);
-    };
-    
-    tempImg.onerror = function() {
-        img.classList.add('lazy-error');
-        if (imgPlaceholder.parentNode) {
-            imgPlaceholder.parentNode.removeChild(imgPlaceholder);
-        }
-    };
-    
-    tempImg.src = src;
-}
+        };
 
-function applyLazyLoad() {
-    const images = document.querySelectorAll('.gallery-image, .content-image, img[src*="assets/images"]');
-    
-    images.forEach(img => {
-        if (!img.getAttribute('data-src') && img.src) {
-            const src = img.src;
-            img.setAttribute('data-src', src);
-            img.src = '';
-            img.classList.add('lazy');
-        }
-    });
-    
-    setupImageLazyLoad();
-}
+        tempImg.src = dataSrc;
+    }
 
-function preloadVisibleImages() {
-    const visibleImages = document.querySelectorAll('img[data-src]:not(.loaded)');
-    const windowHeight = window.innerHeight;
-    
-    visibleImages.forEach(img => {
-        const rect = img.getBoundingClientRect();
-        if (rect.top < windowHeight + 100 && rect.bottom > -100) {
-            const src = img.getAttribute('data-src');
-            if (src) {
-                loadImage(img, src);
+    function preloadVisibleImages() {
+        var visibleImages = document.querySelectorAll('img[data-src]:not(.lazy-loaded)');
+        var windowHeight = window.innerHeight;
+
+        visibleImages.forEach(function(img) {
+            var rect = img.getBoundingClientRect();
+            if (rect.top < windowHeight + 300 && rect.bottom > -300) {
+                if (!loadedImages.has(img)) {
+                    loadImage(img);
+                }
             }
-        }
-    });
-}
+        });
+    }
 
-window.applyLazyLoad = applyLazyLoad;
-window.preloadVisibleImages = preloadVisibleImages;
+    // 防抖
+    function debounce(func, wait) {
+        var timeout;
+        return function() {
+            var context = this, args = arguments;
+            clearTimeout(timeout);
+            timeout = setTimeout(function() {
+                func.apply(context, args);
+            }, wait);
+        };
+    }
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        setupImageObserver();
+        observeNewImages();
+
+        setTimeout(function() {
+            preloadVisibleImages();
+        }, 100);
+
+        // 滚动时检查
+        window.addEventListener('scroll', debounce(function() {
+            preloadVisibleImages();
+        }, 150), { passive: true });
+
+        // resize 时检查
+        window.addEventListener('resize', debounce(function() {
+            preloadVisibleImages();
+        }, 200), { passive: true });
+    });
+
+    // 暴露到全局（供 main.js 在页面切换后调用）
+    window.setupImageLazyLoad = function(root) {
+        observeNewImages(root);
+    };
+    window.preloadVisibleImages = preloadVisibleImages;
+})();

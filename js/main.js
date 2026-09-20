@@ -1,3 +1,22 @@
+// 预处理器：在 HTML 插入 DOM 之前，把 img src 转为 data-src，并添加 lazy 属性
+function preprocessHtml(html) {
+    return html.replace(
+        /<img([^>]*?)\ssrc=(["'])([^"']+\.png)\2([^>]*?)>/gi,
+        function(match, before, quote, srcPath, after) {
+            // 替换 .png 为 .webp
+            const webpSrc = srcPath.replace(/\.png$/i, '.webp');
+            // 如果已有 loading 属性，不重复添加
+            const hasLoading = /\sloading\s*=/i.test(match);
+            const hasDecoding = /\sdecoding\s*=/i.test(match);
+            const hasDataSrc = /\sdata-src\s*=/i.test(match);
+            if (hasDataSrc) return match; // 已经处理过了
+            const loadingAttr = hasLoading ? '' : ' loading="lazy"';
+            const decodingAttr = hasDecoding ? '' : ' decoding="async"';
+            return '<img' + before + ' data-src=' + quote + webpSrc + quote + loadingAttr + decodingAttr + after + '>';
+        }
+    );
+}
+
 // 页面初始化
 document.addEventListener('DOMContentLoaded', function() {
     console.log('页面初始化开始...');
@@ -16,6 +35,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 设置hash路由处理
     setupHashRouting();
+
+    // 预处理主页面中的 logo 图片（index.html 中直接写的 PNG）
+    document.querySelectorAll('img[src*=".png"]').forEach(function(img) {
+        const src = img.getAttribute('src');
+        const webpSrc = src.replace(/\.png$/i, '.webp');
+        img.setAttribute('data-src', webpSrc);
+        img.removeAttribute('src');
+        img.classList.add('lazy');
+        img.setAttribute('loading', 'lazy');
+        img.setAttribute('decoding', 'async');
+    });
+    // 触发初始 lazyload 扫描
+    setTimeout(function() {
+        if (window.setupImageLazyLoad) window.setupImageLazyLoad();
+        if (window.preloadVisibleImages) window.preloadVisibleImages();
+    }, 50);
 
     console.log('页面初始化完成');
 });
@@ -255,8 +290,13 @@ function loadEquipmentPage() {
                 if (xhr.status === 200) {
                     const pageContent = xhr.responseText;
                     console.log('获取到的页面内容长度:', pageContent.length);
-                    contentArea.innerHTML = '<div id="equipment_operating_conditions" class="page-container active"><div class="page-content">' + pageContent + '</div></div>';
+                    // 预处理：把 PNG src 转为 data-src（WebP）
+                    const processedContent = preprocessHtml(pageContent);
+                    contentArea.innerHTML = '<div id="equipment_operating_conditions" class="page-container active"><div class="page-content">' + processedContent + '</div></div>';
                     console.log('设备工况页面加载成功');
+                    // 注册 lazyload
+                    if (window.setupImageLazyLoad) window.setupImageLazyLoad();
+                    if (window.preloadVisibleImages) window.preloadVisibleImages();
                 } else {
                     console.error('加载失败:', xhr.status, xhr.statusText);
                     contentArea.innerHTML = '<div style="padding: 20px;"><h1 style="font-size: 28px; color: white; margin-bottom: 24px; font-weight: 700; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">页面加载失败</h1><div style="background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 20px; padding: 32px; margin-bottom: 30px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); transition: all 0.3s ease;"><p style="font-size: 15px; color: #333; line-height: 1.8; margin-bottom: 16px; font-weight: 500;">抱歉，页面加载失败。</p><p style="font-size: 15px; color: #333; line-height: 1.8; margin-bottom: 16px; font-weight: 500;">错误代码：' + xhr.status + '</p><p style="font-size: 15px; color: #333; line-height: 1.8; margin-bottom: 16px; font-weight: 500;">请检查网络连接后重试。</p></div></div>';
@@ -773,14 +813,20 @@ function loadPage(pageName) {
             const contentArea = document.querySelector('.content-area');
             if (contentArea) {
                 console.log('开始更新内容区域');
+                // 预处理：把 PNG src 转为 data-src（WebP），在插入 DOM 前阻止图片立即加载
+                const processedContent = preprocessHtml(pageContent);
                 contentArea.innerHTML = `
                     <div id="${pageName}" class="page-container active">
                         <div class="page-content">
-                            ${pageContent}
+                            ${processedContent}
                         </div>
                     </div>
                 `;
                 console.log('内容区域更新完成');
+                
+                // 扫描新 DOM 中的 data-src 图片并注册 lazyload
+                if (window.setupImageLazyLoad) window.setupImageLazyLoad();
+                if (window.preloadVisibleImages) window.preloadVisibleImages();
                 
                 // 如果是注册页面、设备工况页面、设备转让页面、工单审批页面、修改密码页面、登录页面、账号注销页面、我的设备页面、我的授权页面、我的地址页面、通讯模组页面、保外服务收费标准页面、更多服务页面、我的配件页面、金刚区页面或热门活动&论坛头条页面，设置标签页切换功能
                 if (pageName === 'register' || pageName === 'equipment_operating_conditions' || pageName === 'device-transfer' || pageName === 'device-transfer-common' || pageName === 'work-order-approval' || pageName === 'work-order-approval-common' || pageName === 'change-password' || pageName === 'username-password' || pageName === 'account-cancel' || pageName === 'my-device' || pageName === 'my-device-my' || pageName === 'my-authorization' || pageName === 'my-authorization-common' || pageName === 'my-address' || pageName === 'communication-module' || pageName === 'out-warranty' || pageName === 'more-services' || pageName === 'need-parts' || pageName === 'complaint' || pageName === 'non-sany-repair' || pageName === 'used-machine-authentication' || pageName === 'diamond-zone' || pageName === 'hot-events-news' || pageName === 'search-followed-devices' || pageName === 'repair-request' || pageName === 'repair-request-service' || pageName === 'repair-request-common' || pageName === 'maintenance' || pageName === 'maintenance-service' || pageName === 'maintenance-common' || pageName === 'online-service-common' || pageName === 'maintenance-code-common' || pageName === 'data-subscription-common' || pageName === 'forum-common' || pageName === 'my-orders-my' || pageName === 'self-service-my' || pageName === 'maintenance-reminder' || pageName === 'suggestions' || pageName === 'message-center' || pageName === 'parts-orders' || pageName === 'parts-orders-new' || pageName === 'my-bills' || pageName === 'system-settings') {
@@ -883,14 +929,20 @@ function tryXMLHttpRequest(pageName, htmlPath, currentProtocol) {
                 const contentArea = document.querySelector('.content-area');
                 if (contentArea) {
                     console.log('开始更新内容区域');
+                    // 预处理：把 PNG src 转为 data-src（WebP），在插入 DOM 前阻止图片立即加载
+                    const processedContent = preprocessHtml(pageContent);
                     contentArea.innerHTML = `
                         <div id="${pageName}" class="page-container active">
                             <div class="page-content">
-                                ${pageContent}
+                                ${processedContent}
                             </div>
                         </div>
                     `;
                     console.log('内容区域更新完成');
+                    
+                    // 扫描新 DOM 中的 data-src 图片并注册 lazyload
+                    if (window.setupImageLazyLoad) window.setupImageLazyLoad();
+                    if (window.preloadVisibleImages) window.preloadVisibleImages();
                     
                     // 如果是注册页面、设备工况页面、设备转让页面、工单审批页面、修改密码页面、登录页面、账号注销页面、我的设备页面、我的授权页面、我的地址页面、通讯模组页面、保外服务收费标准页面、更多服务页面、我的配件页面、投诉页面、非三一设备维修页面、金刚区页面、热门活动&论坛头条页面或搜索关注设备页面，设置标签页切换功能
                     if (pageName === 'register' || pageName === 'equipment_operating_conditions' || pageName === 'device-transfer' || pageName === 'device-transfer-common' || pageName === 'work-order-approval' || pageName === 'work-order-approval-common' || pageName === 'change-password' || pageName === 'username-password' || pageName === 'account-cancel' || pageName === 'my-device' || pageName === 'my-device-my' || pageName === 'my-authorization' || pageName === 'my-authorization-common' || pageName === 'my-address' || pageName === 'communication-module' || pageName === 'out-warranty' || pageName === 'more-services' || pageName === 'need-parts' || pageName === 'complaint' || pageName === 'non-sany-repair' || pageName === 'used-machine-authentication' || pageName === 'diamond-zone' || pageName === 'hot-events-news' || pageName === 'search-followed-devices' || pageName === 'repair-request' || pageName === 'repair-request-service' || pageName === 'repair-request-common' || pageName === 'maintenance' || pageName === 'maintenance-service' || pageName === 'maintenance-common' || pageName === 'online-service-common' || pageName === 'maintenance-code-common' || pageName === 'data-subscription-common' || pageName === 'forum-common' || pageName === 'my-orders-my' || pageName === 'self-service-my' || pageName === 'maintenance-reminder' || pageName === 'suggestions' || pageName === 'message-center' || pageName === 'parts-orders' || pageName === 'parts-orders-new' || pageName === 'my-bills' || pageName === 'system-settings') {
