@@ -11,7 +11,6 @@ assets/images/home/dia_zone/dia_zone_8.png
 assets/images/home/dia_zone/dia_zone_9.png
 assets/images/home/dia_zone/dia_zone_10.png
 assets/images/home/dia_zone/dia_zone_11_2.png
-assets/images/home/dia_zone/dia_zone_11.png
 assets/images/home/dia_zone/dia_zone_12.png
 assets/images/home/dia_zone/dia_zone_13.png
 assets/images/home/dia_zone/dia_zone_14.png
@@ -26,7 +25,6 @@ assets/images/home/my_device/my_device_1.png
 assets/images/home/order_status/order_status_1.png
 assets/images/home/repair_request/repair_request_0.png
 assets/images/home/scan/scan_1.png
-assets/images/home/scan/scan_3.png
 assets/images/home/search_devices/search_devices_1.png
 ）
 4.工况相关页面（
